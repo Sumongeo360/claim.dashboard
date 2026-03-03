@@ -3,12 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <title>Products Claim Report Dashboard</title>
-
-<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<!-- PapaParse & Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -16,7 +12,7 @@
 <style>
 html, body {margin:0; padding:0; height:100%; font-family:Arial,sans-serif;}
 #header {background:#1f2933; color:white; text-align:center; padding:12px; font-size:22px; font-weight:bold;}
-#controls {display:flex; gap:8px; padding:8px; background:#fff; justify-content:center;}
+#controls {display:flex; gap:8px; padding:8px; background:#fff; justify-content:center; flex-wrap:wrap;}
 select, button {font-size:16px; padding:4px 8px;}
 #dashboard {display:flex; gap:10px; height:calc(100% - 130px); padding:10px;}
 #map {flex:1; border-radius:6px; background:#e5e5e5;}
@@ -46,11 +42,10 @@ select, button {font-size:16px; padding:4px 8px;}
 
 <script>
 // -------------------------
-// CSV Data
+// CSV
 const CSV_URL = "https://docs.google.com/spreadsheets/d/1lnnKF_oigj3TQl_N9BfIJJwviHktt3LzyW4UDMjHvxQ/gviz/tq?tqx=out:csv&gid=475032555";
 let rawData = [], chartInstance;
 
-// -------------------------
 // DOM
 const insuranceFilter = document.getElementById("insuranceFilter");
 const districtFilter  = document.getElementById("districtFilter");
@@ -63,10 +58,9 @@ const toggleLayerBtn  = document.getElementById("toggleLayerBtn");
 // Leaflet Map
 const map = L.map('map').setView([23.7, 90.3], 7);
 const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-const satelliteLayer = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'); // placeholder satellite
+const satelliteLayer = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
 let currentLayer = "base";
 
-// GeoJSON layers
 let divLayer, distLayer, upazilaLayer;
 let selectedFeature;
 
@@ -75,13 +69,13 @@ let selectedFeature;
 Papa.parse(CSV_URL, {
   download:true, header:true, skipEmptyLines:true,
   complete: function(results){
-    rawData = results.data.map(r => ({
-      insurance: r["Insurance Name"],
-      date: new Date(r["Date"]),
-      district: r["District"],
-      upazila: r["Upazila"],
-      trigger: parseFloat(r["Trigger"]),
-      temp: parseFloat(r["Temperature(C)"])
+    rawData = results.data.map(r=>({
+      insurance:r["Insurance Name"],
+      date:new Date(r["Date"]),
+      district:r["District"],
+      upazila:r["Upazila"],
+      trigger:parseFloat(r["Trigger"]),
+      temp:parseFloat(r["Temperature(C)"])
     }));
     initFilters();
     updateDashboard();
@@ -92,24 +86,34 @@ Papa.parse(CSV_URL, {
 // Filters
 function initFilters(){
   const insurances = [...new Set(rawData.map(d=>d.insurance).filter(Boolean))].sort();
-  const districts = [...new Set(rawData.map(d=>d.district).filter(Boolean))].sort();
   insuranceFilter.innerHTML = '<option value="">All Insurance</option>' + insurances.map(i=>`<option>${i}</option>`).join("");
-  districtFilter.innerHTML  = '<option value="">All District</option>' + districts.map(d=>`<option>${d}</option>`).join("");
-  insuranceFilter.onchange = updateDashboard;
-  districtFilter.onchange  = ()=>{ updateUpazilas(); updateDashboard(); };
+
+  insuranceFilter.onchange = () => { updateDistricts(); updateUpazilas(); updateDashboard(); };
+  districtFilter.onchange  = () => { updateUpazilas(); updateDashboard(); };
   upazilaFilter.onchange   = updateDashboard;
-  resetBtn.onclick = ()=>{
+  resetBtn.onclick = ()=> {
     insuranceFilter.value=""; districtFilter.value=""; upazilaFilter.innerHTML='<option value="">All Upazila</option>';
+    updateDistricts();
+    updateUpazilas();
     updateDashboard();
+    if(selectedFeature){ map.removeLayer(selectedFeature); selectedFeature=null; }
   };
+
+  updateDistricts();
   updateUpazilas();
 }
 
+// Alphabetical Districts
+function updateDistricts(){
+  const insVal = insuranceFilter.value;
+  const districts = [...new Set(rawData.filter(d=>!insVal||d.insurance===insVal).map(d=>d.district).filter(Boolean))].sort();
+  districtFilter.innerHTML = '<option value="">All District</option>' + districts.map(d=>`<option>${d}</option>`).join("");
+}
+
+// Alphabetical Upazilas
 function updateUpazilas(){
-  const selectedDistrict = districtFilter.value;
-  const upazilas = [...new Set(rawData.filter(d=>
-    !selectedDistrict || d.district === selectedDistrict
-  ).map(d=>d.upazila).filter(Boolean))].sort();
+  const distVal = districtFilter.value;
+  const upazilas = [...new Set(rawData.filter(d=>!distVal||d.district===distVal).map(d=>d.upazila).filter(Boolean))].sort();
   upazilaFilter.innerHTML = '<option value="">All Upazila</option>' + upazilas.map(u=>`<option>${u}</option>`).join("");
 }
 
@@ -120,23 +124,23 @@ function updateDashboard(){
   const distVal = districtFilter.value;
   const upaVal  = upazilaFilter.value;
 
-  const filtered = rawData.filter(d =>
-    (!insVal || d.insurance === insVal) &&
-    (!distVal || d.district === distVal) &&
-    (!upaVal || d.upazila === upaVal)
+  const filtered = rawData.filter(d=>
+    (!insVal || d.insurance===insVal) &&
+    (!distVal || d.district===distVal) &&
+    (!upaVal || d.upazila===upaVal)
   ).sort((a,b)=>a.date - b.date);
 
-  const labels = filtered.map(d => d.date);
-  const temps  = filtered.map(d => d.temp);
-  const triggers = filtered.map(d => (d.temp <= d.trigger) ? d.temp : null);
+  const labels = filtered.map(d=>d.date);
+  const temps  = filtered.map(d=>d.temp);
+  const triggers = filtered.map(d=>d.temp<=d.trigger?d.temp:null);
 
-  const triggerDays = filtered.filter(d=>d.temp <= d.trigger).length;
-  summaryDiv.textContent = "Total Trigger Days: " + triggerDays;
+  const triggerDays = triggers.filter(v=>v!==null).length;
+  summaryDiv.textContent = "Total Trigger Days: "+triggerDays;
 
   if(chartInstance) chartInstance.destroy();
-  chartInstance = new Chart(document.getElementById("tempChart").getContext("2d"), {
+  chartInstance = new Chart(document.getElementById("tempChart").getContext("2d"),{
     type:'line',
-    data:{labels, datasets:[
+    data:{labels,datasets:[
       {label:'Temperature (°C)', data:temps, borderColor:'blue', backgroundColor:'rgba(0,0,255,0.1)', tension:0.2},
       {label:'Trigger Points', data:triggers, borderColor:'red', pointRadius:6, showLine:false}
     ]},
@@ -145,71 +149,70 @@ function updateDashboard(){
 }
 
 // -------------------------
-// Load GeoJSON Layers
-function loadGeoJSON(){
-  fetch('gadm41_BGD_1.json').then(r=>r.json()).then(data=>{
-    divLayer = L.geoJSON(data,{style:divStyle,onEachFeature:onEachDivision}).addTo(map);
-  });
-  fetch('gadm41_BGD_2.json').then(r=>r.json()).then(data=>{
-    distLayer = L.geoJSON(data,{style:distStyle,onEachFeature:onEachDistrict});
-  });
-  fetch('gadm41_BGD_3.json').then(r=>r.json()).then(data=>{
-    // optional district administrative polygons if needed
-  });
-  fetch('gadm41_BGD_4.json').then(r=>r.json()).then(data=>{
-    upazilaLayer = L.geoJSON(data,{style:upazilaStyle,onEachFeature:onEachUpazila});
-  });
+// GeoJSON
+async function loadGeoJSON(){
+  const divGeo = await fetch('gadm41_BGD_2.json').then(r=>r.json());
+  const distGeo = await fetch('gadm41_BGD_3.json').then(r=>r.json());
+  const upaGeo = await fetch('gadm41_BGD_4.json').then(r=>r.json());
+
+  divLayer = L.geoJSON(divGeo, {style:divStyle, onEachFeature:onEachDivision}).addTo(map);
+  distLayer = L.geoJSON(distGeo, {style:distStyle, onEachFeature:onEachDistrict});
+  upazilaLayer = L.geoJSON(upaGeo, {style:upazilaStyle, onEachFeature:onEachUpazila});
 }
 
 // -------------------------
 // Styles
-function divStyle(){ return {color:'black', weight:2, fillColor:'#ffd', fillOpacity:0.4}; }
-function distStyle(){ return {color:'black', weight:1, fillColor:'#cce', fillOpacity:0.4}; }
-function upazilaStyle(){ return {color:'black', weight:1, fillColor:'#fdb', fillOpacity:0.4}; }
+function divStyle(){return {color:'black', weight:2, fillColor:'#ffd', fillOpacity:0.3};}
+function distStyle(){return {color:'black', weight:1, fillColor:'#cce', fillOpacity:0.3};}
+function upazilaStyle(){return {color:'black', weight:1, fillColor:'#fdb', fillOpacity:0.3};}
 
 // -------------------------
 // Click Handlers
-function onEachDivision(feature, layer){
-  layer.on('click', ()=>{
-    if(selectedFeature) map.removeLayer(selectedFeature);
-    selectedFeature = L.geoJSON(feature,{style:{color:'red',fillOpacity:0.5}}).addTo(map);
-    map.fitBounds(layer.getBounds());
-    districtFilter.value=""; upazilaFilter.innerHTML='<option value="">All Upazila</option>';
-    updateDashboard();
-  });
+function highlightFeature(feature, layer){
+  if(selectedFeature) map.removeLayer(selectedFeature);
+  selectedFeature = L.geoJSON(feature,{style:{color:'red',fillOpacity:0.5}}).addTo(map);
+  map.fitBounds(layer.getBounds());
 }
 
-function onEachDistrict(feature, layer){
+// Division click
+function onEachDivision(feature, layer){
   layer.on('click', ()=>{
-    if(selectedFeature) map.removeLayer(selectedFeature);
-    selectedFeature = L.geoJSON(feature,{style:{color:'red',fillOpacity:0.5}}).addTo(map);
-    map.fitBounds(layer.getBounds());
+    highlightFeature(feature, layer);
+    districtFilter.value="";
     upazilaFilter.innerHTML='<option value="">All Upazila</option>';
+    updateDistricts();
     updateUpazilas();
     updateDashboard();
   });
 }
 
+// District click
+function onEachDistrict(feature, layer){
+  layer.on('click', ()=>{
+    highlightFeature(feature, layer);
+    districtFilter.value = feature.properties.NAME_3 || "";
+    updateUpazilas();
+    updateDashboard();
+  });
+}
+
+// Upazila click
 function onEachUpazila(feature, layer){
   layer.on('click', ()=>{
-    if(selectedFeature) map.removeLayer(selectedFeature);
-    selectedFeature = L.geoJSON(feature,{style:{color:'red',fillOpacity:0.5}}).addTo(map);
-    map.fitBounds(layer.getBounds());
+    highlightFeature(feature, layer);
     upazilaFilter.value = feature.properties.NAME_4 || "";
     updateDashboard();
   });
 }
 
 // -------------------------
-// Layer Toggle
+// Layer toggle
 toggleLayerBtn.onclick = ()=>{
-  if(currentLayer === "base"){ map.removeLayer(baseLayer); satelliteLayer.addTo(map); currentLayer="sat"; toggleLayerBtn.textContent="Base"; }
-  else { map.removeLayer(satelliteLayer); baseLayer.addTo(map); currentLayer="base"; toggleLayerBtn.textContent="Satellite"; }
+  if(currentLayer==='base'){ map.removeLayer(baseLayer); satelliteLayer.addTo(map); currentLayer='sat'; toggleLayerBtn.textContent="Base"; }
+  else{ map.removeLayer(satelliteLayer); baseLayer.addTo(map); currentLayer='base'; toggleLayerBtn.textContent="Satellite"; }
 }
 
-// -------------------------
 loadGeoJSON();
-
 </script>
 </body>
 </html>
