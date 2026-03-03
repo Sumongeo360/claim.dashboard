@@ -2,28 +2,29 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Products Claim Report Dashboard</title>
+<title>Products Claim Dashboard</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-providers/leaflet-providers.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 
 <style>
-html, body {margin:0; padding:0; height:100%; font-family:Arial,sans-serif;}
-#header {background:#1f2933; color:white; text-align:center; padding:12px; font-size:22px; font-weight:bold;}
-#controls {display:flex; gap:8px; padding:8px; background:#fff; justify-content:center; flex-wrap:wrap;}
-select, button {font-size:16px; padding:4px 8px;}
-#dashboard {display:flex; gap:10px; height:calc(100% - 130px); padding:10px;}
-#map {flex:1; border-radius:6px; background:#e5e5e5;}
-#chartArea {flex:1; background:#fff; padding:10px; border-radius:6px; display:flex; flex-direction:column;}
-#summary {margin-top:8px;font-size:16px;font-weight:bold;color:#333;}
-.upazila-label {font-family:'Times New Roman'; font-weight:bold; text-shadow: 0 0 2px white;}
+html,body{margin:0;padding:0;height:100%;font-family:Arial,sans-serif;}
+#header{background:#1f2933;color:white;text-align:center;padding:12px;font-size:22px;font-weight:bold;}
+#controls{display:flex;gap:8px;padding:8px;background:#fff;justify-content:center;flex-wrap:wrap;}
+select,button{font-size:16px;padding:4px 8px;}
+#dashboard{display:flex;gap:10px;height:calc(100% - 130px);padding:10px;}
+#map{flex:1;border-radius:6px;background:#e5e5e5;}
+#chartArea{flex:1;background:#fff;padding:10px;border-radius:6px;display:flex;flex-direction:column;}
+#summary{margin-top:8px;font-size:16px;font-weight:bold;color:#333;}
+.upazila-label{font-family:'Times New Roman';font-weight:bold;text-shadow:0 0 2px white;}
 </style>
 </head>
-
 <body>
+
 <div id="header">Products Claim Report Dashboard</div>
 
 <div id="controls">
@@ -43,31 +44,35 @@ select, button {font-size:16px; padding:4px 8px;}
 
 <script>
 // -------------------------
-// CSV
+// CSV Data
 const CSV_URL = "https://docs.google.com/spreadsheets/d/1lnnKF_oigj3TQl_N9BfIJJwviHktt3LzyW4UDMjHvxQ/gviz/tq?tqx=out:csv&gid=475032555";
-let rawData = [], chartInstance;
+let rawData=[], chartInstance;
 
 // DOM
-const insuranceFilter = document.getElementById("insuranceFilter");
-const districtFilter  = document.getElementById("districtFilter");
-const upazilaFilter   = document.getElementById("upazilaFilter");
-const resetBtn        = document.getElementById("resetBtn");
-const summaryDiv      = document.getElementById("summary");
+const insuranceFilter=document.getElementById("insuranceFilter");
+const districtFilter=document.getElementById("districtFilter");
+const upazilaFilter=document.getElementById("upazilaFilter");
+const resetBtn=document.getElementById("resetBtn");
+const summaryDiv=document.getElementById("summary");
 
 // -------------------------
 // Leaflet Map
-const map = L.map('map').setView([23.7,90.3], 7);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const map=L.map('map',{zoomControl:true}).setView([23.7,90.3],7);
 
-let upazilaLayer, selectedFeature;
-let labelLayerGroup = L.layerGroup().addTo(map);
+// Base & Satellite layers
+const baseLayer=L.tileLayer.provider('OpenStreetMap.Mapnik').addTo(map);
+const satelliteLayer=L.tileLayer.provider('Esri.WorldImagery');
+const layerControl=L.control.layers({Base:baseLayer,Satellite:satelliteLayer}).addTo(map);
+
+let districtLayer, upazilaLayer, selectedFeature;
+let labelLayerGroup=L.layerGroup().addTo(map);
 
 // -------------------------
 // Load CSV
-Papa.parse(CSV_URL, {
+Papa.parse(CSV_URL,{
   download:true, header:true, skipEmptyLines:true,
-  complete: function(results){
-    rawData = results.data.map(r=>({
+  complete:function(results){
+    rawData=results.data.map(r=>({
       insurance:r["Insurance Name"],
       date:new Date(r["Date"]),
       district:r["District"],
@@ -77,133 +82,138 @@ Papa.parse(CSV_URL, {
     }));
     initFilters();
     updateDashboard();
+    loadDistricts();
+    loadUpazilas();
   }
 });
 
 // -------------------------
 // Filters
 function initFilters(){
-  const insurances = [...new Set(rawData.map(d=>d.insurance).filter(Boolean))].sort();
-  insuranceFilter.innerHTML = '<option value="">All Insurance</option>'+insurances.map(i=>`<option>${i}</option>`).join("");
-  insuranceFilter.onchange = () => { updateDistricts(); updateUpazilas(); updateDashboard(); };
-  districtFilter.onchange = () => { updateUpazilas(); updateDashboard(); };
-  upazilaFilter.onchange = () => { updateDashboard(); zoomToUpazila(upazilaFilter.value); };
+  const insurances=[...new Set(rawData.map(d=>d.insurance).filter(Boolean))].sort();
+  insuranceFilter.innerHTML='<option value="">All Insurance</option>'+insurances.map(i=>`<option>${i}</option>`).join("");
+  insuranceFilter.onchange=()=>{ updateDistricts(); updateUpazilas(); updateDashboard(); zoomToDistrict(districtFilter.value); };
+  districtFilter.onchange=()=>{ updateUpazilas(); updateDashboard(); zoomToDistrict(districtFilter.value); };
+  upazilaFilter.onchange=()=>{ updateDashboard(); zoomToUpazila(upazilaFilter.value); };
 
-  resetBtn.onclick = () => {
+  resetBtn.onclick=()=>{
     insuranceFilter.value=""; districtFilter.value=""; upazilaFilter.value="";
     updateDistricts(); updateUpazilas(); updateDashboard();
     if(selectedFeature){ map.removeLayer(selectedFeature); selectedFeature=null; }
+    zoomToDistrict("");
   };
 
   updateDistricts();
   updateUpazilas();
 }
 
-// -------------------------
-// District & Upazila options
+// Update district options
 function updateDistricts(){
-  const insVal = insuranceFilter.value;
-  const districts = [...new Set(rawData.filter(d=>!insVal||d.insurance===insVal).map(d=>d.district).filter(Boolean))].sort();
-  districtFilter.innerHTML = '<option value="">All District</option>'+districts.map(d=>`<option>${d}</option>`).join("");
+  const insVal=insuranceFilter.value;
+  const districts=[...new Set(rawData.filter(d=>!insVal||d.insurance===insVal).map(d=>d.district).filter(Boolean))].sort();
+  districtFilter.innerHTML='<option value="">All District</option>'+districts.map(d=>`<option>${d}</option>`).join("");
 }
 
+// Update upazila options
 function updateUpazilas(){
-  const insVal = insuranceFilter.value;
-  const distVal = districtFilter.value;
-  let upazilas = [...new Set(rawData.filter(d=>
-    (!insVal||d.insurance===insVal)&&(!distVal||d.district===distVal)
-  ).map(d=>d.upazila).filter(Boolean))].sort();
-  upazilaFilter.innerHTML = '<option value="">All Upazila</option>'+upazilas.map(u=>`<option>${u}</option>`).join("");
+  const insVal=insuranceFilter.value;
+  const distVal=districtFilter.value;
+  let upazilas=[...new Set(rawData.filter(d=>(!insVal||d.insurance===insVal)&&(!distVal||d.district===distVal)).map(d=>d.upazila).filter(Boolean))].sort();
+  upazilaFilter.innerHTML='<option value="">All Upazila</option>'+upazilas.map(u=>`<option>${u}</option>`).join("");
 
-  // auto-select first upazila if none selected
-  if(upazilas.length>0 && !upazilaFilter.value){
-    upazilaFilter.value = upazilas[0];
-    zoomToUpazila(upazilas[0]);
-  }
+  if(upazilas.length>0 && !upazilaFilter.value){ upazilaFilter.value=upazilas[0]; zoomToUpazila(upazilas[0]); }
 }
 
 // -------------------------
 // Chart
 function updateDashboard(){
-  const insVal  = insuranceFilter.value;
-  const distVal = districtFilter.value;
-  const upaVal  = upazilaFilter.value;
+  const insVal=insuranceFilter.value, distVal=districtFilter.value, upaVal=upazilaFilter.value;
+  const filtered=rawData.filter(d=>(!insVal||d.insurance===insVal)&&(!distVal||d.district===distVal)&&(!upaVal||d.upazila===upaVal)).sort((a,b)=>a.date-b.date);
 
-  const filtered = rawData.filter(d=>
-    (!insVal||d.insurance===insVal)&&
-    (!distVal||d.district===distVal)&&
-    (!upaVal||d.upazila===upaVal)
-  ).sort((a,b)=>a.date-b.date);
-
-  const labels = filtered.map(d=>d.date);
-  const temps  = filtered.map(d=>d.temp);
-  const triggers = filtered.map(d=>d.temp<=d.trigger?d.temp:null);
-  const triggerDays = triggers.filter(v=>v!==null).length;
-  summaryDiv.textContent = "Total Trigger Days: "+triggerDays;
+  const labels=filtered.map(d=>d.date);
+  const temps=filtered.map(d=>d.temp);
+  const triggers=filtered.map(d=>(d.temp<=d.trigger)?d.temp:null);
+  const triggerDays=triggers.filter(v=>v!==null).length;
+  summaryDiv.textContent="Total Trigger Days: "+triggerDays;
 
   if(chartInstance) chartInstance.destroy();
-  chartInstance = new Chart(document.getElementById("tempChart").getContext("2d"),{
+  chartInstance=new Chart(document.getElementById("tempChart").getContext("2d"),{
     type:'line',
     data:{labels,datasets:[
-      {label:'Temperature (°C)', data:temps, borderColor:'blue', backgroundColor:'rgba(0,0,255,0.1)', tension:0.2},
-      {label:'Trigger Points', data:triggers, borderColor:'red', pointRadius:6, showLine:false}
+      {label:'Temperature (°C)',data:temps,borderColor:'blue',backgroundColor:'rgba(0,0,255,0.1)',tension:0.2,pointRadius:3,pointStyle:'circle'},
+      {label:'Trigger Points',data:triggers,borderColor:'red',backgroundColor:'red',showLine:false,pointRadius:8,pointStyle:'circle'}
     ]},
-    options:{scales:{x:{type:'time',time:{unit:'day'}},y:{title:{display:true,text:'Temperature (°C)'}}}}
+    options:{
+      plugins:{tooltip:{callbacks:{label:function(ctx){
+        const d=ctx.raw; const date=new Date(ctx.label); return `Date: ${date.getDate()}/${date.getMonth()+1}/${date.getFullYear()} Temp: ${d}°C`;}}}},
+      scales:{x:{type:'time',time:{unit:'day'}},y:{title:{display:true,text:'Temperature (°C)'}}}
+    }
   });
 }
 
 // -------------------------
-// Load upazila GeoJSON
-async function loadUpazilas(){
-  const data = await fetch('gadm41_BGD_4.json').then(r=>r.json());
+// Load Districts
+async function loadDistricts(){
+  const data=await fetch('gadm41_BGD_3.json').then(r=>r.json());
+  if(districtLayer) map.removeLayer(districtLayer);
+  districtLayer=L.geoJSON(data,{style:{color:'blue',weight:2,fill:false}}).addTo(map);
+}
 
-  // Only show upazilas present in CSV for selected insurance
-  const insVal = insuranceFilter.value;
-  const validUpazilas = new Set(rawData.filter(d=>!insVal||d.insurance===insVal).map(d=>d.upazila));
+// -------------------------
+// Load Upazilas
+async function loadUpazilas(){
+  const data=await fetch('gadm41_BGD_4.json').then(r=>r.json());
+  const insVal=insuranceFilter.value;
+  const validUpazilas=new Set(rawData.filter(d=>!insVal||d.insurance===insVal).map(d=>d.upazila));
 
   if(upazilaLayer) map.removeLayer(upazilaLayer);
   labelLayerGroup.clearLayers();
 
-  upazilaLayer = L.geoJSON(data, {
-    filter: f=>validUpazilas.has(f.properties.NAME_4),
-    style: {color:'black', weight:1, fillColor:'#fdb', fillOpacity:0.3},
-    onEachFeature: function(feature, layer){
-      layer.on('click', ()=>{
+  upazilaLayer=L.geoJSON(data,{
+    filter:f=>validUpazilas.has(f.properties.NAME_4),
+    style:{color:'red',weight:2,fillColor:'#fdb',fillOpacity:0.3},
+    onEachFeature:(feature,layer)=>{
+      layer.on('click',()=>{
         selectedFeature && map.removeLayer(selectedFeature);
-        selectedFeature = L.geoJSON(feature,{style:{color:'red',fillOpacity:0.5}}).addTo(map);
-
-        // update dropdowns
-        districtFilter.value = feature.properties.NAME_3 || "";
-        upazilaFilter.value = feature.properties.NAME_4 || "";
+        selectedFeature=L.geoJSON(feature,{style:{color:'darkred',fillOpacity:0.5}}).addTo(map);
+        districtFilter.value=feature.properties.NAME_3 || "";
+        upazilaFilter.value=feature.properties.NAME_4 || "";
         updateDashboard();
       });
-
-      // Label
-      const center = layer.getBounds().getCenter();
-      const label = L.divIcon({className:'upazila-label', html:feature.properties.NAME_4});
-      const lblMarker = L.marker(center,{icon:label}).addTo(labelLayerGroup);
+      const center=layer.getBounds().getCenter();
+      const label=L.divIcon({className:'upazila-label',html:feature.properties.NAME_4,iconAnchor:[0,0]});
+      L.marker(center,{icon:label}).addTo(labelLayerGroup);
     }
   }).addTo(map);
 }
 
-// Zoom to upazila by name
+// -------------------------
+// Zoom functions
+function zoomToDistrict(name){
+  if(!districtLayer) return;
+  districtLayer.eachLayer(l=>{
+    if(!name || l.feature.properties.NAME_2===name){
+      map.fitBounds(l.getBounds());
+    }
+  });
+}
 function zoomToUpazila(name){
   if(!upazilaLayer) return;
   upazilaLayer.eachLayer(l=>{
-    if(l.feature.properties.NAME_4 === name){
+    if(l.feature.properties.NAME_4===name){
       map.fitBounds(l.getBounds());
       selectedFeature && map.removeLayer(selectedFeature);
-      selectedFeature = L.geoJSON(l.feature,{style:{color:'red',fillOpacity:0.5}}).addTo(map);
+      selectedFeature=L.geoJSON(l.feature,{style:{color:'darkred',fillOpacity:0.5}}).addTo(map);
     }
   });
 }
 
+// -------------------------
 // Update map when filters change
 insuranceFilter.addEventListener('change', loadUpazilas);
 districtFilter.addEventListener('change', loadUpazilas);
+upazilaFilter.addEventListener('change',()=>zoomToUpazila(upazilaFilter.value));
 
-// Initial load
-loadUpazilas();
 </script>
 </body>
 </html>
