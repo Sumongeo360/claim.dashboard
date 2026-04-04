@@ -154,7 +154,7 @@ function updateDashboard(){
 // -------------------------
 // Load Districts
 async function loadDistricts(){
-  const data=await fetch('gadm41_BGD_3.json').then(r=>r.json());
+  const data=await fetch('districts.geojson').then(r=>r.json());
   if(districtLayer) map.removeLayer(districtLayer);
   districtLayer=L.geoJSON(data,{style:{color:'blue',weight:2,fill:false}}).addTo(map);
 }
